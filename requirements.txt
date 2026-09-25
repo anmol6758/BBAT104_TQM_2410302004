@@ -1,0 +1,8 @@
+# BBAT104 TQM Course Project Dependencies
+# Pharmacy Management System - [Q07: Improve Data Accuracy]
+# Student: Anmol Joshi (Roll No: 2410302004)
+
+matplotlib>=3.10.0
+pandas>=2.2.0
+numpy>=2.0.0
+pillow>=11.0.0
