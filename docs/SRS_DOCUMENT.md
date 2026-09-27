@@ -222,3 +222,38 @@ The Pharmacy Management System operates as an autonomous, self-contained desktop
 
 ---
 
+## 4. NON-FUNCTIONAL REQUIREMENTS (NFR)
+
+### 4.1 Data Integrity & Accuracy (Primary TQM Focus)
+- **NFR-01 (Zero Unvalidated Writes):** 100% of data write operations into the SQLite database must pass regex and bounds validation layers before SQL execution.
+- **NFR-02 (Audit Immutability):** The audit log table shall only permit `INSERT` statements; `UPDATE` and `DELETE` queries on `audit_logs` are rejected by schema triggers.
+- **NFR-03 (Referential Integrity):** SQLite foreign key constraints (`PRAGMA foreign_keys = ON`) must be enforced on every connection to prevent orphaned transaction items.
+
+### 4.2 Performance and Scalability
+- **NFR-04 (Response Time):** Database queries for inventory searches and auto-complete lookups must return results in $< 50\text{ ms}$ for catalog sizes up to 10,000 SKUs.
+- **NFR-05 (Transaction Atomicity):** Invoicing and stock deduction must execute within a unified atomic transaction (`BEGIN TRANSACTION ... COMMIT`) with rollback on exception.
+
+### 4.3 Usability and Human Factors
+- **NFR-06 (Ergonomic Keyboard Navigation):** Common dispensing actions must support keyboard shortcuts (`Enter` to add item, `Ctrl+S` to checkout, `Esc` to dismiss dialog).
+- **NFR-07 (Human-Readable Error Messages):** System validation failures must state:
+  1. The invalid input provided.
+  2. The exact constraint violated.
+  3. The corrective action required.
+
+### 4.4 Reliability and Fault Tolerance
+- **NFR-08 (Crash Recovery):** Using SQLite Write-Ahead Logging (WAL) ensures zero database corruption even during abrupt application termination or power outage.
+- **NFR-09 (Defect Logging Resilience):** The defect capture engine must log validation rejections without terminating the user's active session.
+
+---
+
+## 5. TQM CRITICAL TO QUALITY (CTQ) MATRIX & POKA-YOKE CRITERIA
+
+| CTQ Parameter | Customer / Clinical Need | Quality Metric | Target Threshold | Poka-Yoke Control Implemented |
+| :--- | :--- | :--- | :--- | :--- |
+| **CTQ-1: Dispensing Accuracy** | Prevent lethal drug substitution and LASA confusion | Incorrect drug selection rate | **0.00%** | Auto-complete with dual Brand & Generic display + Confirmation Modal |
+| **CTQ-2: Expiry Compliance** | Prohibit dispensing expired or near-expiry batches | Expired batch sale events | **Zero events** | Strict date masking (`YYYY-MM-DD`) + Auto-blocking of dates $\le \text{Today}$ |
+| **CTQ-3: Batch Traceability** | Ensure recall readiness via accurate batch tracking | Unformatted / missing batch records | **0.00%** | Format enforcement mask `BATCH-[A-Z0-9]{5}` |
+| **CTQ-4: Pricing Integrity** | Prevent customer overcharge or margin loss | Negative or inverted margin ($Sale < Cost$) | **0.00%** | DB Check constraint + UI modal alert on margin deficit |
+| **CTQ-5: Historical Accountability**| Track unauthorized stock balance adjustments | Unlogged database mutations | **0.00%** | Automated SQLite trigger & Python DAL audit log generation |
+
+
