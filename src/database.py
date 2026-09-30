@@ -161,3 +161,88 @@ def init_db(conn=None):
         conn.close()
 
 
+def seed_db(conn=None):
+    """Populates certified baseline categories, suppliers, and benchmark medicines."""
+    should_close = False
+    if conn is None:
+        conn = get_connection()
+        should_close = True
+
+    # Check if already seeded before opening a write transaction
+    cursor = conn.execute("SELECT COUNT(*) AS cnt FROM medicines")
+    if cursor.fetchone()["cnt"] > 0:
+        if should_close:
+            conn.close()
+        return
+
+    with conn:
+        # Seed Categories
+        categories = [
+            ("Antibiotic", "Anti-bacterial pharmaceutical agents for systemic infections"),
+            ("Analgesic", "Pain relief and antipyretic formulations"),
+            ("Antihistamine", "Anti-allergy and respiratory relief agents"),
+            ("Antidiabetic", "Glycemic control and insulin regulators"),
+            ("Cardiovascular", "Antihypertensive and lipid-lowering drugs"),
+            ("Gastrointestinal", "Proton pump inhibitors and antacids"),
+            ("Respiratory", "Bronchodilators and mucolytics"),
+            ("Dermatological", "Topical ointments and skin barrier creams"),
+        ]
+        for name, desc in categories:
+            conn.execute("INSERT OR IGNORE INTO categories (name, description) VALUES (?, ?)", (name, desc))
+
+        # Seed Suppliers
+        suppliers = [
+            ("Apex Pharma Logistics Ltd", "Dr. Rajesh Sharma", "(800) 555-0199", "orders@apexpharma.com", "Industrial Estate Phase 2, New Delhi", "DL-DL-2024-00412"),
+            ("MedSupply Global Distribution", "Ms. Sunita Verma", "(800) 555-0245", "supply@medsupplyglobal.com", "Logistics Hub, Sector 62, Noida", "DL-UP-2023-00981"),
+            ("BioHealth Lifesciences Pvt", "Mr. Vikram Mehta", "(800) 555-0378", "contact@biohealth.in", "BioTech Park, Electronic City, Bengaluru", "DL-KA-2024-00122"),
+            ("Sterling Healthcare Distributors", "Mr. Anand Kapoor", "(800) 555-0466", "sales@sterlinghealth.com", "Ring Road Warehouses, Mumbai", "DL-MH-2022-00567"),
+        ]
+        for s in suppliers:
+            conn.execute("""
+            INSERT OR IGNORE INTO suppliers (name, contact_person, phone, email, address, drug_license)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """, s)
+
+        # Retrieve supplier IDs
+        sup_ids = [row["id"] for row in conn.execute("SELECT id FROM suppliers ORDER BY id").fetchall()]
+
+        # Seed Medicines with standard formatting
+        future_base = date.today() + timedelta(days=365)
+        meds = [
+            ("Augmentin 625 Duo", "Amoxicillin + Clavulanic Acid", "Antibiotic", "Tablet", "Schedule H1", "BATCH-AUG01", (future_base + timedelta(days=120)).strftime("%Y-%m-%d"), 140.0, 185.0, 120, 25, sup_ids[0]),
+            ("Dolo 650", "Paracetamol", "Analgesic", "Tablet", "OTC", "BATCH-DOL02", (future_base + timedelta(days=240)).strftime("%Y-%m-%d"), 22.0, 31.5, 350, 50, sup_ids[1]),
+            ("Azithral 500", "Azithromycin", "Antibiotic", "Tablet", "Schedule H1", "BATCH-AZI03", (future_base + timedelta(days=180)).strftime("%Y-%m-%d"), 95.0, 125.0, 80, 20, sup_ids[0]),
+            ("Glycomet GP 1", "Metformin + Glimepiride", "Antidiabetic", "Tablet", "Schedule H", "BATCH-GLY04", (future_base + timedelta(days=300)).strftime("%Y-%m-%d"), 85.0, 112.0, 150, 30, sup_ids[2]),
+            ("Atorva 20", "Atorvastatin", "Cardiovascular", "Tablet", "Schedule H", "BATCH-ATO05", (future_base + timedelta(days=400)).strftime("%Y-%m-%d"), 160.0, 210.0, 95, 20, sup_ids[2]),
+            ("Pan 40", "Pantoprazole", "Gastrointestinal", "Tablet", "Schedule H", "BATCH-PAN06", (future_base + timedelta(days=210)).strftime("%Y-%m-%d"), 70.0, 98.0, 200, 40, sup_ids[3]),
+            ("Allegra 120", "Fexofenadine Hydrochloride", "Antihistamine", "Tablet", "Schedule H", "BATCH-ALL07", (future_base + timedelta(days=190)).strftime("%Y-%m-%d"), 145.0, 190.0, 60, 15, sup_ids[1]),
+            ("Ascoril LS Syrup", "Levosalbutamol + Ambroxol + Guaiphenesin", "Respiratory", "Syrup", "Schedule H", "BATCH-ASC08", (future_base + timedelta(days=90)).strftime("%Y-%m-%d"), 80.0, 108.0, 45, 15, sup_ids[3]),
+            ("Betadine 10% Ointment", "Povidone Iodine", "Dermatological", "Ointment", "OTC", "BATCH-BET09", (future_base + timedelta(days=320)).strftime("%Y-%m-%d"), 65.0, 88.0, 75, 20, sup_ids[1]),
+            ("Ciprogut 0.3% Eye Drops", "Ciprofloxacin", "Antibiotic", "Drops", "Schedule H", "BATCH-CIP10", (future_base + timedelta(days=150)).strftime("%Y-%m-%d"), 28.0, 42.0, 90, 25, sup_ids[0]),
+            ("Combiflam", "Ibuprofen + Paracetamol", "Analgesic", "Tablet", "OTC", "BATCH-COM11", (future_base + timedelta(days=270)).strftime("%Y-%m-%d"), 26.0, 37.0, 240, 40, sup_ids[1]),
+            ("Monocef 1g Injection", "Ceftriaxone", "Antibiotic", "Injection", "Schedule H1", "BATCH-MON12", (future_base + timedelta(days=110)).strftime("%Y-%m-%d"), 48.0, 65.0, 30, 10, sup_ids[0]),
+        ]
+
+        for m in meds:
+            cursor = conn.execute("""
+            INSERT INTO medicines (
+                name, generic_name, category, dosage_form, schedule_type,
+                batch_no, expiry_date, purchase_price, sale_price, stock_qty,
+                reorder_level, supplier_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, m)
+            med_id = cursor.lastrowid
+            # Seed audit log for initial baseline insertion
+            conn.execute("""
+            INSERT INTO audit_logs (action_type, table_name, record_id, field_name, old_value, new_value, user_role)
+            VALUES ('INSERT', 'medicines', ?, 'all_fields', NULL, ?, 'System Initializer')
+            """, (med_id, f"Initial catalog creation for {m[0]}"))
+
+    if should_close:
+        conn.close()
+
+
+if __name__ == "__main__":
+    init_db()
+    seed_db()
+    print("Database initialized and seeded successfully at:", DB_PATH)
