@@ -226,32 +226,3 @@ class MedicineRepository:
             AuditRepository.log(conn, "DELETE", "medicines", med_id, "all_fields", name, None, user_role)
         conn.close()
 
-    @staticmethod
-    def get_stock_alerts():
-        conn = get_connection()
-        today = date.today().strftime("%Y-%m-%d")
-        warning_expiry = (date.today() + __import__("datetime").timedelta(days=90)).strftime("%Y-%m-%d")
-        
-        low_stock = conn.execute("""
-            SELECT * FROM medicines WHERE stock_qty <= reorder_level ORDER BY stock_qty ASC
-        """).fetchall()
-
-        expiring = conn.execute("""
-            SELECT * FROM medicines WHERE expiry_date <= ? ORDER BY expiry_date ASC
-        """, (warning_expiry,)).fetchall()
-
-        conn.close()
-        return [dict(r) for r in low_stock], [dict(r) for r in expiring]
-
-
-class SupplierRepository:
-    """Repository for certified pharmaceutical suppliers."""
-
-    @staticmethod
-    def get_all():
-        conn = get_connection()
-        rows = conn.execute("SELECT * FROM suppliers ORDER BY name ASC").fetchall()
-        conn.close()
-        return [dict(r) for r in rows]
-
-
