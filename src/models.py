@@ -226,3 +226,102 @@ class MedicineRepository:
             AuditRepository.log(conn, "DELETE", "medicines", med_id, "all_fields", name, None, user_role)
         conn.close()
 
+    @staticmethod
+    def get_stock_alerts():
+        conn = get_connection()
+        today = date.today().strftime("%Y-%m-%d")
+        warning_expiry = (date.today() + __import__("datetime").timedelta(days=90)).strftime("%Y-%m-%d")
+        
+        low_stock = conn.execute("""
+            SELECT * FROM medicines WHERE stock_qty <= reorder_level ORDER BY stock_qty ASC
+        """).fetchall()
+
+        expiring = conn.execute("""
+            SELECT * FROM medicines WHERE expiry_date <= ? ORDER BY expiry_date ASC
+        """, (warning_expiry,)).fetchall()
+
+        conn.close()
+        return [dict(r) for r in low_stock], [dict(r) for r in expiring]
+
+
+class SupplierRepository:
+    """Repository for certified pharmaceutical suppliers."""
+
+    @staticmethod
+    def get_all():
+        conn = get_connection()
+        rows = conn.execute("SELECT * FROM suppliers ORDER BY name ASC").fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+
+class SalesRepository:
+    """Atomic sales transaction engine ensuring inventory deduction and audit logging."""
+
+    @staticmethod
+    def create_sale(customer_name, customer_phone, items, payment_mode="Cash", tax_rate=0.05, user_role="Pharmacist"):
+        """
+        items: list of dicts with keys: {'medicine_id', 'quantity', 'unit_price'}
+        """
+        conn = get_connection()
+        with conn:
+            # 1. Validate stock availability for each item
+            gross_total = 0.0
+            for item in items:
+                med = conn.execute("SELECT name, stock_qty FROM medicines WHERE id = ?", (item["medicine_id"],)).fetchone()
+                if not med:
+                    raise ValueError(f"Medicine ID {item['medicine_id']} not found.")
+                if med["stock_qty"] < item["quantity"]:
+                    raise ValueError(f"Insufficient stock for '{med['name']}'. Requested: {item['quantity']}, Available: {med['stock_qty']}.")
+                gross_total += item["quantity"] * item["unit_price"]
+
+            tax_amount = round(gross_total * tax_rate, 2)
+            net_amount = round(gross_total + tax_amount, 2)
+            timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S")
+            invoice_no = f"INV-{timestamp_str}"
+
+            # 2. Insert sales invoice header
+            cursor = conn.execute("""
+                INSERT INTO sales (invoice_no, customer_name, customer_phone, total_amount, tax_amount, net_amount, payment_mode)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (invoice_no, customer_name, customer_phone, gross_total, tax_amount, net_amount, payment_mode))
+            sale_id = cursor.lastrowid
+
+            # 3. Insert sale items & deduct inventory atomically
+            for item in items:
+                subtotal = round(item["quantity"] * item["unit_price"], 2)
+                conn.execute("""
+                    INSERT INTO sale_items (sale_id, medicine_id, quantity, unit_price, subtotal)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (sale_id, item["medicine_id"], item["quantity"], item["unit_price"], subtotal))
+
+                # Decrement stock
+                old_stock = conn.execute("SELECT stock_qty, name FROM medicines WHERE id = ?", (item["medicine_id"],)).fetchone()
+                new_stock = old_stock["stock_qty"] - item["quantity"]
+                conn.execute("UPDATE medicines SET stock_qty = ? WHERE id = ?", (new_stock, item["medicine_id"]))
+
+                # Audit log stock adjustment
+                AuditRepository.log(
+                    conn, "CHECKOUT", "medicines", item["medicine_id"], "stock_qty",
+                    old_stock["stock_qty"], new_stock, f"{user_role} (Invoice {invoice_no})"
+                )
+
+            # Audit log sale creation
+            AuditRepository.log(conn, "CHECKOUT", "sales", sale_id, "net_amount", None, f"Invoice {invoice_no} | Net: Rs. {net_amount:.2f}", user_role)
+
+        conn.close()
+        return invoice_no, net_amount
+
+    @staticmethod
+    def get_all_sales(limit=50):
+        conn = get_connection()
+        rows = conn.execute("""
+            SELECT s.*, COUNT(si.id) as item_count 
+            FROM sales s 
+            LEFT JOIN sale_items si ON s.id = si.sale_id 
+            GROUP BY s.id 
+            ORDER BY s.id DESC 
+            LIMIT ?
+        """, (limit,)).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
