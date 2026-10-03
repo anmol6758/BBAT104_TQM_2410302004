@@ -356,3 +356,43 @@ class PharmacyApp(tk.Tk):
         if med_data:
             MedicineFormDialog(self, mode="edit", medicine_data=med_data, on_save=self.load_inventory_data)
 
+    def delete_selected_medicine(self):
+        selected = self.inv_tree.selection()
+        if not selected:
+            messagebox.showwarning("Selection Required", "Please select a medicine from the list to delete.")
+            return
+        item_vals = self.inv_tree.item(selected[0])["values"]
+        med_id, med_name = item_vals[0], item_vals[1]
+        batch, stock = item_vals[6], item_vals[10]
+
+        # Q07 Feature 4: Confirmation Modal with Delta/Decommissioning Details
+        def confirm_delete():
+            try:
+                MedicineRepository.delete(med_id, user_role="Pharmacist")
+                messagebox.showinfo("Success", f"Medicine '{med_name}' deleted successfully.")
+                self.load_inventory_data()
+            except ValueError as ex:
+                messagebox.showerror("Deletion Prohibited", str(ex))
+
+        ConfirmationModal(
+            self,
+            title="Confirm Decommissioning / Deletion",
+            action_description=(
+                f"You are requesting to permanently delete '{med_name}' (ID: {med_id}) from active catalog.\n"
+                f"Batch: {batch} | Active Stock: {stock} units.\n\n"
+                f"This action cannot be undone. An immutable audit record will be logged."
+            ),
+            changes_dict={
+                "Record Status": ("Active In Stock", "Permanently Decommissioned"),
+                "Medicine Name": (med_name, "REMOVED"),
+                "Batch Number": (batch, "DECOMMISSIONED")
+            },
+            on_confirm=confirm_delete
+        )
+
+    # =========================================================================
+    # PLACEHOLDERS FOR REMAINING TABS
+    # =========================================================================
+    # =========================================================================
+    # TAB 2: BILLING & POS (Q07 Feature 3: Auto-Complete)
+    # =========================================================================
