@@ -396,3 +396,5 @@ class PharmacyApp(tk.Tk):
     # =========================================================================
     # TAB 2: BILLING & POS (Q07 Feature 3: Auto-Complete)
     # =========================================================================
+
+    # Real-time search & category filter toolbar active
