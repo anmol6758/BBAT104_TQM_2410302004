@@ -396,5 +396,575 @@ class PharmacyApp(tk.Tk):
     # =========================================================================
     # TAB 2: BILLING & POS (Q07 Feature 3: Auto-Complete)
     # =========================================================================
+    def show_billing_tab(self):
+        self.clear_content()
 
-    # Real-time search & category filter toolbar active
+        self.cart_items = []  # [{medicine_id, name, batch_no, unit_price, quantity, subtotal}]
+        self.selected_med_for_cart = None
+
+        # Header
+        top_bar = ttk.Frame(self.content_area)
+        top_bar.pack(fill=tk.X, pady=(0, 10))
+
+        title = ttk.Label(top_bar, text="POS Billing & Prescription Dispensing", font=("Trebuchet MS", 14, "bold"))
+        title.pack(side=tk.LEFT)
+
+        badge = tk.Label(top_bar, text="Q07 Auto-Complete & Masking Active", bg="#d8f3dc", fg="#1b4332", font=("Calibri", 10, "bold"), padx=8, pady=3)
+        badge.pack(side=tk.RIGHT)
+
+        # Upper Layout: Two columns (Left: Customer & Medicine Selection, Right: Cart Summary)
+        upper_frame = ttk.Frame(self.content_area)
+        upper_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Column 1: Customer Info
+        cust_frame = ttk.LabelFrame(upper_frame, text="1. Patient / Customer Information", padding=10)
+        cust_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+
+        ttk.Label(cust_frame, text="Patient Name:").grid(row=0, column=0, sticky=tk.W, pady=3)
+        self.cust_name_entry = PlaceholderEntry(cust_frame, placeholder="e.g. Walk-in Patient", width=24)
+        self.cust_name_entry.grid(row=0, column=1, sticky=tk.EW, pady=3, padx=(5, 0))
+
+        ttk.Label(cust_frame, text="Contact Phone:").grid(row=1, column=0, sticky=tk.W, pady=3)
+        self.cust_phone_entry = PlaceholderMaskedPhoneEntry(cust_frame, placeholder="e.g. 9876543210", width=24)
+        self.cust_phone_entry.grid(row=1, column=1, sticky=tk.EW, pady=3, padx=(5, 0))
+
+        ttk.Label(cust_frame, text="Payment Mode:").grid(row=2, column=0, sticky=tk.W, pady=3)
+        self.pay_mode_var = tk.StringVar(value="Cash")
+        pay_combo = ttk.Combobox(cust_frame, textvariable=self.pay_mode_var, state="readonly", width=22, values=["Cash", "Card", "UPI", "NetBanking"])
+        pay_combo.grid(row=2, column=1, sticky=tk.EW, pady=3, padx=(5, 0))
+
+        # Column 2: Auto-Complete Medicine Picker
+        med_frame = ttk.LabelFrame(upper_frame, text="2. Medicine Selection (Q07 Auto-Complete)", padding=10)
+        med_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        ttk.Label(med_frame, text="Search Medicine:").grid(row=0, column=0, sticky=tk.W, pady=3)
+        self.ac_entry = AutoCompleteEntry(
+            med_frame,
+            search_callback=MedicineRepository.search_autocomplete,
+            on_select_callback=self._on_autocomplete_med_selected,
+            width=28
+        )
+        self.ac_entry.grid(row=0, column=1, sticky=tk.EW, pady=3, padx=(5, 0))
+
+        ttk.Label(med_frame, text="Available Stock:").grid(row=1, column=0, sticky=tk.W, pady=3)
+        self.avail_stock_lbl = ttk.Label(med_frame, text="-- units", font=("Calibri", 10, "bold"))
+        self.avail_stock_lbl.grid(row=1, column=1, sticky=tk.W, pady=3, padx=(5, 0))
+
+        ttk.Label(med_frame, text="Quantity to Dispense:").grid(row=2, column=0, sticky=tk.W, pady=3)
+        qty_box = ttk.Frame(med_frame)
+        qty_box.grid(row=2, column=1, sticky=tk.W, pady=3, padx=(5, 0))
+
+        self.dispense_qty_var = tk.StringVar(value="1")
+        qty_entry = ttk.Entry(qty_box, textvariable=self.dispense_qty_var, width=8)
+        qty_entry.pack(side=tk.LEFT)
+
+        btn_add_cart = ttk.Button(qty_box, text="➕ Add to Cart", style="Success.TButton", command=self._add_to_cart)
+        btn_add_cart.pack(side=tk.LEFT, padx=(10, 0))
+
+        # Middle: Cart Data Grid
+        cart_frame = ttk.LabelFrame(self.content_area, text="3. Dispensing Cart Items", padding=10)
+        cart_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
+        cart_cols = ("idx", "name", "batch", "price", "qty", "subtotal")
+        self.cart_tree = ttk.Treeview(cart_frame, columns=cart_cols, show="headings", height=8)
+        self.cart_tree.heading("idx", text="#")
+        self.cart_tree.heading("name", text="Medicine Name")
+        self.cart_tree.heading("batch", text="Batch No")
+        self.cart_tree.heading("price", text="Unit Price (Rs.)")
+        self.cart_tree.heading("qty", text="Quantity")
+        self.cart_tree.heading("subtotal", text="Subtotal (Rs.)")
+
+        self.cart_tree.column("idx", width=40, anchor=tk.CENTER)
+        self.cart_tree.column("name", width=260, anchor=tk.W)
+        self.cart_tree.column("batch", width=120, anchor=tk.CENTER)
+        self.cart_tree.column("price", width=100, anchor=tk.E)
+        self.cart_tree.column("qty", width=90, anchor=tk.CENTER)
+        self.cart_tree.column("subtotal", width=120, anchor=tk.E)
+
+        self.cart_tree.pack(fill=tk.BOTH, expand=True)
+
+        # Bottom Bar: Financial Totals and Checkout
+        bottom_bar = ttk.Frame(self.content_area)
+        bottom_bar.pack(fill=tk.X)
+
+        btn_del_item = ttk.Button(bottom_bar, text="❌ Remove Item", command=self._remove_cart_item)
+        btn_del_item.pack(side=tk.LEFT, padx=5)
+
+        btn_clear = ttk.Button(bottom_bar, text="🧹 Clear Cart", command=self._clear_cart)
+        btn_clear.pack(side=tk.LEFT, padx=5)
+
+        # Right Summary Box
+        summary_box = ttk.Frame(bottom_bar)
+        summary_box.pack(side=tk.RIGHT)
+
+        self.subtotal_lbl = ttk.Label(summary_box, text="Subtotal: Rs. 0.00", font=("Calibri", 11))
+        self.subtotal_lbl.pack(side=tk.LEFT, padx=15)
+
+        self.tax_lbl = ttk.Label(summary_box, text="GST (5%): Rs. 0.00", font=("Calibri", 11))
+        self.tax_lbl.pack(side=tk.LEFT, padx=15)
+
+        self.net_lbl = ttk.Label(summary_box, text="Net: Rs. 0.00", font=("Trebuchet MS", 12, "bold"), foreground="#005f73")
+        self.net_lbl.pack(side=tk.LEFT, padx=15)
+
+        self.btn_checkout = ttk.Button(summary_box, text="💳 Checkout & Print Bill", style="Success.TButton", command=self._execute_checkout)
+        self.btn_checkout.pack(side=tk.LEFT, padx=10)
+
+    def _on_autocomplete_med_selected(self, med):
+        self.selected_med_for_cart = med
+        self.avail_stock_lbl.config(
+            text=f"{med['stock_qty']} units (Batch: {med['batch_no']} | Rs. {med['sale_price']:.2f})",
+            foreground="#007200" if med["stock_qty"] > 10 else "#d90429"
+        )
+
+    def _add_to_cart(self):
+        if not self.selected_med_for_cart:
+            messagebox.showwarning("Selection Required", "Please select a medicine using the Auto-Complete search box.")
+            return
+
+        try:
+            qty = int(self.dispense_qty_var.get().strip())
+        except ValueError:
+            messagebox.showerror("Invalid Input", "Quantity must be a valid integer.")
+            return
+
+        if qty <= 0:
+            messagebox.showerror("Invalid Input", "Quantity must be greater than zero.")
+            return
+
+        if qty > self.selected_med_for_cart["stock_qty"]:
+            messagebox.showerror(
+                "Stock Insufficient",
+                f"Requested quantity ({qty}) exceeds available stock ({self.selected_med_for_cart['stock_qty']})."
+            )
+            return
+
+        # Check if item already in cart
+        for item in self.cart_items:
+            if item["medicine_id"] == self.selected_med_for_cart["id"]:
+                if item["quantity"] + qty > self.selected_med_for_cart["stock_qty"]:
+                    messagebox.showerror("Stock Exceeded", "Total requested in cart exceeds inventory stock.")
+                    return
+                item["quantity"] += qty
+                item["subtotal"] = round(item["quantity"] * item["unit_price"], 2)
+                self._refresh_cart_view()
+                return
+
+        subtotal = round(qty * self.selected_med_for_cart["sale_price"], 2)
+        self.cart_items.append({
+            "medicine_id": self.selected_med_for_cart["id"],
+            "name": self.selected_med_for_cart["name"],
+            "batch_no": self.selected_med_for_cart["batch_no"],
+            "unit_price": self.selected_med_for_cart["sale_price"],
+            "quantity": qty,
+            "subtotal": subtotal
+        })
+
+        self.ac_entry.delete(0, tk.END)
+        self.avail_stock_lbl.config(text="-- units", foreground="#212529")
+        self.selected_med_for_cart = None
+        self.dispense_qty_var.set("1")
+        self._refresh_cart_view()
+
+    def _refresh_cart_view(self):
+        for item in self.cart_tree.get_children():
+            self.cart_tree.delete(item)
+
+        gross = 0.0
+        for idx, item in enumerate(self.cart_items, 1):
+            gross += item["subtotal"]
+            self.cart_tree.insert("", tk.END, values=(
+                idx, item["name"], item["batch_no"],
+                f"{item['unit_price']:.2f}", item["quantity"], f"{item['subtotal']:.2f}"
+            ))
+
+        tax = round(gross * 0.05, 2)
+        net = round(gross + tax, 2)
+
+        self.subtotal_lbl.config(text=f"Subtotal: Rs. {gross:.2f}")
+        self.tax_lbl.config(text=f"GST (5%): Rs. {tax:.2f}")
+        self.net_lbl.config(text=f"Net: Rs. {net:.2f}")
+
+    def _remove_cart_item(self):
+        sel = self.cart_tree.selection()
+        if not sel:
+            messagebox.showwarning("Select Item", "Please select a cart item to remove.")
+            return
+        idx = int(self.cart_tree.item(sel[0])["values"][0]) - 1
+        if 0 <= idx < len(self.cart_items):
+            self.cart_items.pop(idx)
+            self._refresh_cart_view()
+
+    def _clear_cart(self):
+        self.cart_items = []
+        self._refresh_cart_view()
+
+    def _execute_checkout(self):
+        if not self.cart_items:
+            messagebox.showwarning("Cart Empty", "Please add medicines to cart before checking out.")
+            return
+
+        cust_name = self.cust_name_entry.get_actual_value() if hasattr(self, "cust_name_entry") else ""
+        if not cust_name:
+            cust_name = "Walk-in Patient"
+
+        raw_phone = self.cust_phone_entry.get_actual_value() if hasattr(self, "cust_phone_entry") else ""
+        if not raw_phone:
+            raw_phone = "9876543210"
+
+        try:
+            cust_phone = DataValidator.validate_phone(raw_phone)
+        except ValidationError as ve:
+            messagebox.showerror(f"Poka-Yoke Rejection [{ve.defect_code}]", f"{ve.category}:\n\n{ve.message}")
+            return
+
+        gross = sum(i["subtotal"] for i in self.cart_items)
+        tax = round(gross * 0.05, 2)
+        net = round(gross + tax, 2)
+        mode = self.pay_mode_var.get()
+
+        # Confirmation modal
+        summary_msg = (
+            f"Ready to finalize prescription sale?\n\n"
+            f"Patient: {cust_name} ({cust_phone})\n"
+            f"Total Medicines: {len(self.cart_items)} item(s)\n"
+            f"Gross Total: Rs. {gross:.2f}\n"
+            f"GST (5%): Rs. {tax:.2f}\n"
+            f"Net Payable: Rs. {net:.2f}\n"
+            f"Payment Mode: {mode}\n\n"
+            f"Stock will be decremented and logged in Audit Trail immediately."
+        )
+
+        confirm = messagebox.askyesno("Confirm Prescription Sale", summary_msg)
+        if confirm:
+            try:
+                inv_no, total = SalesRepository.create_sale(
+                    customer_name=cust_name,
+                    customer_phone=cust_phone,
+                    items=self.cart_items,
+                    payment_mode=mode,
+                    tax_rate=0.05,
+                    user_role="Pharmacist"
+                )
+                messagebox.showinfo(
+                    "Invoice Generated",
+                    f"Prescription successfully dispensed!\n\n"
+                    f"Invoice Number: {inv_no}\n"
+                    f"Net Amount Collected: Rs. {total:.2f}\n\n"
+                    f"Inventory deducted and Audit Log created."
+                )
+                self._clear_cart()
+                if hasattr(self, "cust_name_entry"):
+                    self.cust_name_entry.set_value("")
+                if hasattr(self, "cust_phone_entry"):
+                    self.cust_phone_entry.set_value("")
+            except Exception as e:
+                messagebox.showerror("Checkout Failed", f"Transaction aborted:\n{e}")
+
+
+    # =========================================================================
+    # TAB 3: AUDIT TRAIL (Q07 Feature 5: Immutable Audit Logging)
+    # =========================================================================
+    def show_audit_tab(self):
+        self.clear_content()
+
+        # Top Bar
+        top_bar = ttk.Frame(self.content_area)
+        top_bar.pack(fill=tk.X, pady=(0, 10))
+
+        title = ttk.Label(top_bar, text="Immutable Audit Trail & Historical Traceability", font=("Trebuchet MS", 14, "bold"))
+        title.pack(side=tk.LEFT)
+
+        # Immutability Security Badge
+        badge = tk.Label(
+            top_bar,
+            text="🔒 Immutability Trigger Locked (Zero Deletes/Updates Allowed)",
+            bg="#dbeafe", fg="#1e40af",
+            font=("Calibri", 10, "bold"), padx=10, pady=4
+        )
+        badge.pack(side=tk.RIGHT)
+
+        # Filters Toolbar
+        filter_bar = ttk.Frame(self.content_area)
+        filter_bar.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(filter_bar, text="Action Filter:").pack(side=tk.LEFT, padx=(0, 5))
+        self.audit_action_var = tk.StringVar(value="All")
+        action_combo = ttk.Combobox(
+            filter_bar, textvariable=self.audit_action_var, state="readonly", width=14,
+            values=["All", "INSERT", "UPDATE", "DELETE", "CHECKOUT"]
+        )
+        action_combo.pack(side=tk.LEFT, padx=(0, 15))
+        action_combo.bind("<<ComboboxSelected>>", lambda e: self.load_audit_data())
+
+        ttk.Label(filter_bar, text="Target Table:").pack(side=tk.LEFT, padx=(0, 5))
+        self.audit_table_var = tk.StringVar(value="All")
+        tbl_combo = ttk.Combobox(
+            filter_bar, textvariable=self.audit_table_var, state="readonly", width=14,
+            values=["All", "medicines", "suppliers", "sales"]
+        )
+        tbl_combo.pack(side=tk.LEFT, padx=(0, 15))
+        tbl_combo.bind("<<ComboboxSelected>>", lambda e: self.load_audit_data())
+
+        btn_refresh = ttk.Button(filter_bar, text="🔄 Refresh Logs", command=self.load_audit_data)
+        btn_refresh.pack(side=tk.LEFT, padx=5)
+
+        btn_export = ttk.Button(filter_bar, text="📥 Export Audit CSV", command=self.export_audit_csv)
+        btn_export.pack(side=tk.RIGHT, padx=5)
+
+        # Audit Table Grid
+        grid_frame = ttk.Frame(self.content_area)
+        grid_frame.pack(fill=tk.BOTH, expand=True)
+
+        cols = ("id", "timestamp", "action", "table", "record_id", "field", "old_val", "new_val", "user")
+        self.audit_tree = ttk.Treeview(grid_frame, columns=cols, show="headings", selectmode="browse")
+
+        col_defs = [
+            ("id", "Log #", 50, tk.CENTER),
+            ("timestamp", "Timestamp (UTC/Local)", 140, tk.CENTER),
+            ("action", "Action", 85, tk.CENTER),
+            ("table", "Table", 90, tk.CENTER),
+            ("record_id", "Record ID", 70, tk.CENTER),
+            ("field", "Field Modified", 110, tk.W),
+            ("old_val", "Old Value", 160, tk.W),
+            ("new_val", "New Value", 220, tk.W),
+            ("user", "Operator / Role", 130, tk.W),
+        ]
+
+        for col_id, heading, width, align in col_defs:
+            self.audit_tree.heading(col_id, text=heading)
+            self.audit_tree.column(col_id, width=width, anchor=align)
+
+        y_scroll = ttk.Scrollbar(grid_frame, orient=tk.VERTICAL, command=self.audit_tree.yview)
+        x_scroll = ttk.Scrollbar(grid_frame, orient=tk.HORIZONTAL, command=self.audit_tree.xview)
+        self.audit_tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+
+        self.audit_tree.grid(row=0, column=0, sticky="nsew")
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll.grid(row=1, column=0, sticky="ew")
+
+        grid_frame.grid_rowconfigure(0, weight=1)
+        grid_columnconfigure = grid_frame.grid_columnconfigure(0, weight=1)
+
+        # Row color tagging for actions
+        self.audit_tree.tag_configure("INSERT", background="#f0fdf4")
+        self.audit_tree.tag_configure("UPDATE", background="#fefce8")
+        self.audit_tree.tag_configure("DELETE", background="#fef2f2")
+        self.audit_tree.tag_configure("CHECKOUT", background="#f5f3ff")
+
+        self.load_audit_data()
+
+    def load_audit_data(self):
+        for item in self.audit_tree.get_children():
+            self.audit_tree.delete(item)
+
+        action = self.audit_action_var.get()
+        table = self.audit_table_var.get()
+        logs = AuditRepository.get_all(limit=150, action_type=action, table_name=table)
+
+        for l in logs:
+            self.audit_tree.insert("", tk.END, values=(
+                l["id"], l["timestamp"], l["action_type"], l["table_name"],
+                l["record_id"], l["field_name"] or "-",
+                l["old_value"] or "-", l["new_value"] or "-",
+                l["user_role"]
+            ), tags=(l["action_type"],))
+
+        self.status_lbl.config(text=f"Displaying {len(logs)} audit trail entries. TQM Immutability Triggers Active.")
+
+    def export_audit_csv(self):
+        logs = AuditRepository.get_all(limit=500)
+        export_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "reports", "audit_trail_export.csv")
+        os.makedirs(os.path.dirname(export_path), exist_ok=True)
+        try:
+            import csv
+            with open(export_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=["id", "timestamp", "action_type", "table_name", "record_id", "field_name", "old_value", "new_value", "user_role"])
+                writer.writeheader()
+                writer.writerows(logs)
+            messagebox.showinfo("Export Successful", f"Audit trail exported successfully to:\n{export_path}")
+        except Exception as e:
+            messagebox.showerror("Export Failed", f"Could not export CSV:\n{e}")
+
+    def show_sqc_tab(self):
+        self.clear_content()
+        lbl = ttk.Label(self.content_area, text="Statistical Quality Control (SQC) Dashboard", font=("Trebuchet MS", 14, "bold"))
+        lbl.pack(anchor=tk.W, pady=5)
+        ttk.Label(self.content_area, text="SQC Analytics (Pareto, Fishbone, Checksheets) will be integrated in Review 3/4.", font=("Calibri", 11)).pack(anchor=tk.W, pady=10)
+
+
+class MedicineFormDialog(tk.Toplevel):
+    """Dialog for creating and editing medicines with field validation."""
+
+    def __init__(self, parent, mode="add", medicine_data=None, on_save=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.mode = mode
+        self.medicine_data = medicine_data or {}
+        self.on_save = on_save
+
+        self.title("Add New Medicine" if mode == "add" else f"Edit Medicine: {self.medicine_data.get('name', '')}")
+        self.geometry("580x640")
+        self.resizable(False, False)
+        self.grab_set()
+
+        self._build_form()
+
+    def _build_form(self):
+        frame = ttk.Frame(self, padding=20)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        header = ttk.Label(
+            frame,
+            text="Medicine Master Information" if self.mode == "add" else "Update Medicine Details",
+            font=("Trebuchet MS", 13, "bold"),
+            foreground="#005f73"
+        )
+        header.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 15))
+
+        self.fields = {}
+        row = 1
+
+        # Form specifications
+        specs = [
+            ("name", "Trade/Brand Name *", self.medicine_data.get("name", "")),
+            ("generic_name", "Generic Salt Composition *", self.medicine_data.get("generic_name", "")),
+            ("category", "Therapeutic Category *", self.medicine_data.get("category", "Antibiotic")),
+            ("dosage_form", "Dosage Form *", self.medicine_data.get("dosage_form", "Tablet")),
+            ("schedule_type", "Regulatory Schedule *", self.medicine_data.get("schedule_type", "OTC")),
+            ("batch_no", "Batch Number * (Prefix: BATCH-)", self.medicine_data.get("batch_no", "")),
+            ("expiry_date", "Expiry Date * (YYYY-MM-DD)", self.medicine_data.get("expiry_date", "")),
+            ("purchase_price", "Wholesale Cost Price (Rs. ) *", str(self.medicine_data.get("purchase_price", "0.00"))),
+            ("sale_price", "Retail Sale Price (Rs. ) *", str(self.medicine_data.get("sale_price", "0.00"))),
+            ("stock_qty", "Stock Quantity *", str(self.medicine_data.get("stock_qty", "0"))),
+            ("reorder_level", "Reorder Threshold *", str(self.medicine_data.get("reorder_level", "15"))),
+        ]
+
+        for key, label_text, default_val in specs:
+            lbl = ttk.Label(frame, text=label_text)
+            lbl.grid(row=row, column=0, sticky=tk.W, pady=4)
+
+            if key == "category":
+                var = tk.StringVar(value=default_val)
+                widget = ttk.Combobox(frame, textvariable=var, state="readonly", values=DataValidator.VALID_CATEGORIES)
+                self.fields[key] = var
+            elif key == "dosage_form":
+                var = tk.StringVar(value=default_val)
+                widget = ttk.Combobox(frame, textvariable=var, state="readonly", values=DataValidator.VALID_DOSAGE_FORMS)
+                self.fields[key] = var
+            elif key == "schedule_type":
+                var = tk.StringVar(value=default_val)
+                widget = ttk.Combobox(frame, textvariable=var, state="readonly", values=DataValidator.VALID_SCHEDULES)
+                self.fields[key] = var
+            elif key == "expiry_date":
+                var = tk.StringVar(value=default_val)
+                widget = MaskedDateEntry(frame, textvariable=var, width=32)
+                self.fields[key] = var
+            elif key == "batch_no":
+                widget = BatchNumberWidget(frame, initial_value=default_val, width=22)
+                self.fields[key] = widget
+            else:
+                var = tk.StringVar(value=default_val)
+                widget = ttk.Entry(frame, textvariable=var, width=32)
+                self.fields[key] = var
+
+            widget.grid(row=row, column=1, sticky=tk.EW, pady=4)
+            row += 1
+
+        # Suppliers
+        lbl_sup = ttk.Label(frame, text="Supplier *")
+        lbl_sup.grid(row=row, column=0, sticky=tk.W, pady=4)
+
+        suppliers = SupplierRepository.get_all()
+        self.supplier_map = {s["name"]: s["id"] for s in suppliers}
+        default_sup_name = ""
+        for name, sid in self.supplier_map.items():
+            if sid == self.medicine_data.get("supplier_id"):
+                default_sup_name = name
+                break
+        if not default_sup_name and suppliers:
+            default_sup_name = suppliers[0]["name"]
+
+        self.sup_var = tk.StringVar(value=default_sup_name)
+        sup_combo = ttk.Combobox(frame, textvariable=self.sup_var, state="readonly", values=list(self.supplier_map.keys()))
+        sup_combo.grid(row=row, column=1, sticky=tk.EW, pady=4)
+        row += 1
+
+        # Action Buttons
+        btn_box = ttk.Frame(frame)
+        btn_box.grid(row=row, column=0, columnspan=2, pady=(20, 0))
+
+        btn_cancel = ttk.Button(btn_box, text="Cancel", command=self.destroy)
+        btn_cancel.pack(side=tk.LEFT, padx=10)
+
+        btn_submit = ttk.Button(btn_box, text="Save Medicine", style="Success.TButton", command=self.save)
+        btn_submit.pack(side=tk.LEFT, padx=10)
+
+    def save(self):
+        # Extract values
+        data = {k: v.get().strip() for k, v in self.fields.items()}
+        data["supplier_id"] = self.supplier_map.get(self.sup_var.get())
+
+        # Presence validation
+        if not data["name"] or not data["generic_name"]:
+            messagebox.showerror("Validation Error", "Medicine Trade Name and Generic Salt Composition are mandatory fields.")
+            return
+
+        try:
+            # Poka-Yoke Validations (Q07 Feature 1 & 2)
+            data["expiry_date"] = DataValidator.validate_expiry_date(data["expiry_date"], require_future=True)
+            data["batch_no"] = DataValidator.validate_batch_number(data["batch_no"])
+            data["purchase_price"], data["sale_price"] = DataValidator.validate_prices(data["purchase_price"], data["sale_price"])
+            data["stock_qty"] = DataValidator.validate_stock_quantity(data["stock_qty"])
+            data["reorder_level"] = DataValidator.validate_stock_quantity(data["reorder_level"])
+            DataValidator.validate_enum(data["dosage_form"], DataValidator.VALID_DOSAGE_FORMS, "Dosage Form")
+            DataValidator.validate_enum(data["schedule_type"], DataValidator.VALID_SCHEDULES, "Schedule Type")
+            DataValidator.validate_enum(data["category"], DataValidator.VALID_CATEGORIES, "Category")
+
+            # Check for changes in edit mode to trigger ConfirmationModal (Q07 Feature 4)
+            if self.mode == "edit":
+                deltas = {}
+                for k in ["name", "generic_name", "category", "dosage_form", "schedule_type", "batch_no", "expiry_date", "purchase_price", "sale_price", "stock_qty", "reorder_level"]:
+                    old_v = str(self.medicine_data.get(k, ""))
+                    new_v = str(data.get(k, ""))
+                    if k in ("purchase_price", "sale_price"):
+                        old_v = f"{float(old_v):.2f}"
+                        new_v = f"{float(new_v):.2f}"
+                    if old_v != new_v:
+                        deltas[k.replace("_", " ").title()] = (old_v, new_v)
+
+                if deltas:
+                    def commit_edit():
+                        med_id = self.medicine_data["id"]
+                        MedicineRepository.update(med_id, data, user_role="Pharmacist")
+                        messagebox.showinfo("Success", f"Medicine '{data['name']}' updated successfully with audit trail recording.")
+                        if self.on_save:
+                            self.on_save()
+                        self.destroy()
+
+                    ConfirmationModal(
+                        self,
+                        title=f"Confirm Modifications: {data['name']}",
+                        action_description=f"You are modifying {len(deltas)} parameter(s) for medicine '{data['name']}'. Review the changes below:",
+                        changes_dict=deltas,
+                        on_confirm=commit_edit
+                    )
+                    return
+                else:
+                    self.destroy()
+                    return
+
+            # Add mode
+            MedicineRepository.create(data, user_role="Pharmacist")
+            messagebox.showinfo("Success", f"Medicine '{data['name']}' registered successfully with full Poka-Yoke validation.")
+            if self.on_save:
+                self.on_save()
+            self.destroy()
+        except ValidationError as ve:
+            messagebox.showerror(f"Poka-Yoke Rejection [{ve.defect_code}]", f"{ve.category}:\n\n{ve.message}\n\nThis event has been logged to the SQC Defect Checksheet.")
+        except Exception as e:
+            messagebox.showerror("System Error", f"Could not save medicine record:\n{e}")
+
+
+if __name__ == "__main__":
+    app = PharmacyApp()
+    app.mainloop()
