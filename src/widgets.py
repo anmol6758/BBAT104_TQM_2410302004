@@ -279,3 +279,5 @@ class MaskedBatchEntry(ttk.Entry):
         self.icursor(min(pos, len(text)))
 
 
+
+# MaskedPhoneEntry active
