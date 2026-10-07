@@ -279,5 +279,97 @@ class MaskedBatchEntry(ttk.Entry):
         self.icursor(min(pos, len(text)))
 
 
+class AutoCompleteEntry(ttk.Entry):
+    """Q07 Feature 3: Dynamic cross-query Auto-Complete popup listbox."""
 
-# MaskedPhoneEntry active
+    def __init__(self, master, search_callback, on_select_callback=None, **kwargs):
+        super().__init__(master, **kwargs)
+        self.search_callback = search_callback
+        self.on_select_callback = on_select_callback
+        self.listbox_window = None
+        self.listbox = None
+        self.data_items = []
+
+        self.bind("<KeyRelease>", self._on_key_release)
+        self.bind("<FocusOut>", self._on_focus_out)
+        self.bind("<Down>", self._move_down)
+
+    def _on_key_release(self, event):
+        if event.keysym in ("Down", "Up", "Return", "Escape"):
+            if event.keysym == "Return" and self.listbox and self.listbox.curselection():
+                self._select_item()
+            elif event.keysym == "Escape":
+                self._close_popup()
+            return
+
+        query = self.get().strip()
+        if len(query) < 2:
+            self._close_popup()
+            return
+
+        results = self.search_callback(query)
+        if results:
+            self._show_popup(results)
+        else:
+            self._close_popup()
+
+    def _show_popup(self, items):
+        self.data_items = items
+        if not self.listbox_window or not self.listbox_window.winfo_exists():
+            self.listbox_window = tk.Toplevel(self)
+            self.listbox_window.wm_overrideredirect(True)
+            self.listbox = tk.Listbox(
+                self.listbox_window, font=("Calibri", 10),
+                height=min(6, len(items)),
+                selectmode=tk.SINGLE,
+                bg="#ffffff", fg="#212529",
+                selectbackground="#0a9396", selectforeground="#ffffff"
+            )
+            self.listbox.pack(fill=tk.BOTH, expand=True)
+            self.listbox.bind("<ButtonRelease-1>", lambda e: self._select_item())
+            self.listbox.bind("<Return>", lambda e: self._select_item())
+
+        # Position below the entry
+        x = self.winfo_rootx()
+        y = self.winfo_rooty() + self.winfo_height()
+        w = max(self.winfo_width(), 320)
+        self.listbox_window.geometry(f"{w}x{min(150, len(items)*24 + 10)}+{x}+{y}")
+        self.listbox_window.lift()
+
+        self.listbox.delete(0, tk.END)
+        for item in items:
+            display_str = f"{item['name']} ({item['generic_name']}) | Rs. {item['sale_price']:.2f} | Stock: {item['stock_qty']}"
+            self.listbox.insert(tk.END, display_str)
+
+    def _move_down(self, event):
+        if self.listbox and self.listbox_window and self.listbox_window.winfo_exists():
+            self.listbox.focus_set()
+            self.listbox.selection_set(0)
+
+    def _select_item(self):
+        if self.listbox and self.listbox.curselection():
+            index = self.listbox.curselection()[0]
+            selected_item = self.data_items[index]
+            self.delete(0, tk.END)
+            self.insert(0, selected_item["name"])
+            self._close_popup()
+            if self.on_select_callback:
+                self.on_select_callback(selected_item)
+
+    def _on_focus_out(self, event):
+        # Small delay to allow click on popup listbox
+        self.after(200, self._check_focus_and_close)
+
+    def _check_focus_and_close(self):
+        if self.listbox_window and self.listbox_window.winfo_exists():
+            focused = self.focus_get()
+            if focused != self.listbox and focused != self:
+                self._close_popup()
+
+    def _close_popup(self):
+        if self.listbox_window and self.listbox_window.winfo_exists():
+            self.listbox_window.destroy()
+            self.listbox_window = None
+            self.listbox = None
+
+
