@@ -325,3 +325,5 @@ class SalesRepository:
         """, (limit,)).fetchall()
         conn.close()
         return [dict(r) for r in rows]
+
+# Step 28 milestone update - feat(q07-audit): implement immutable audit logging capturing timestamp, user, and mutation deltas
