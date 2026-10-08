@@ -373,3 +373,59 @@ class AutoCompleteEntry(ttk.Entry):
             self.listbox = None
 
 
+class ConfirmationModal(tk.Toplevel):
+    """Q07 Feature 4: Delta Preview Confirmation Modal before critical state commits."""
+
+    def __init__(self, parent, title, action_description, changes_dict=None, on_confirm=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.title(title)
+        self.geometry("520x400")
+        self.resizable(False, False)
+        self.grab_set()
+        self.confirmed = False
+        self.on_confirm = on_confirm
+
+        # Build UI
+        container = ttk.Frame(self, padding=20)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        header = ttk.Label(container, text="⚠️ Action Confirmation Required", font=("Trebuchet MS", 12, "bold"), foreground="#d90429")
+        header.pack(anchor=tk.W, pady=(0, 5))
+
+        desc = ttk.Label(container, text=action_description, font=("Calibri", 11), wraplength=480)
+        desc.pack(anchor=tk.W, pady=(0, 15))
+
+        if changes_dict:
+            tree_frame = ttk.LabelFrame(container, text="Field Modifications Delta (Poka-Yoke Inspection)", padding=8)
+            tree_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+
+            cols = ("field", "old", "new")
+            tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=5)
+            tree.heading("field", text="Parameter")
+            tree.heading("old", text="Previous Value")
+            tree.heading("new", text="Proposed Value")
+
+            tree.column("field", width=140, anchor=tk.W)
+            tree.column("old", width=150, anchor=tk.CENTER)
+            tree.column("new", width=150, anchor=tk.CENTER)
+            tree.pack(fill=tk.BOTH, expand=True)
+
+            for f_name, (old_v, new_v) in changes_dict.items():
+                tree.insert("", tk.END, values=(f_name, str(old_v), str(new_v)))
+
+        # Action Buttons
+        btn_bar = ttk.Frame(container)
+        btn_bar.pack(fill=tk.X, pady=(10, 0))
+
+        btn_cancel = ttk.Button(btn_bar, text="✖ Cancel (Abort)", command=self.destroy)
+        btn_cancel.pack(side=tk.LEFT, padx=10)
+
+        btn_confirm = ttk.Button(btn_bar, text="✔ Confirm & Commit to Database", style="Danger.TButton", command=self._do_confirm)
+        btn_confirm.pack(side=tk.RIGHT, padx=10)
+
+    def _do_confirm(self):
+        self.confirmed = True
+        self.destroy()
+        if self.on_confirm:
+            self.on_confirm()
