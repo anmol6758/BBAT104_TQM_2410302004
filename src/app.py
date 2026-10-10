@@ -968,5 +968,3 @@ class MedicineFormDialog(tk.Toplevel):
 if __name__ == "__main__":
     app = PharmacyApp()
     app.mainloop()
-
-# Step 30 milestone update - feat(ui-pos): implement dispensing cart, live stock bounds check, and 5% GST tax engine
