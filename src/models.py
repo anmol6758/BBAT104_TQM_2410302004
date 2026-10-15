@@ -75,7 +75,7 @@ class MedicineRepository:
     """Domain CRUD repository for pharmaceuticals with built-in audit and validation."""
 
     @staticmethod
-    def get_all(search=None, category=None):
+    def get_all(search=None, category=None, status_filter=None, sort_by="id_asc"):
         conn = get_connection()
         query = """
             SELECT m.*, s.name as supplier_name 
@@ -91,7 +91,28 @@ class MedicineRepository:
         if category and category != "All":
             query += " AND m.category = ?"
             params.append(category)
-        query += " ORDER BY m.name ASC"
+        if status_filter == "Low Stock":
+            query += " AND m.stock_qty <= m.reorder_level"
+        elif status_filter == "Expiring Soon":
+            warning_expiry = (date.today() + __import__("datetime").timedelta(days=90)).strftime("%Y-%m-%d")
+            query += " AND m.expiry_date <= ?"
+            params.append(warning_expiry)
+
+        # Dynamic sorting (default ID ascending)
+        sort_map = {
+            "id_asc": "m.id ASC",
+            "id_desc": "m.id DESC",
+            "name_asc": "m.name ASC",
+            "name_desc": "m.name DESC",
+            "stock_asc": "m.stock_qty ASC",
+            "stock_desc": "m.stock_qty DESC",
+            "expiry_asc": "m.expiry_date ASC",
+            "price_asc": "m.sale_price ASC",
+            "price_desc": "m.sale_price DESC",
+        }
+        order_clause = sort_map.get(sort_by, "m.id ASC")
+        query += f" ORDER BY {order_clause}"
+
         rows = conn.execute(query, params).fetchall()
         conn.close()
         return [dict(r) for r in rows]
