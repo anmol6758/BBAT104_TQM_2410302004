@@ -29,12 +29,15 @@ This document covers:
 - **CRUD:** Create, Read, Update, Delete database transactions
 - **LASA:** Look-Alike / Sound-Alike medications
 - **SKU:** Stock Keeping Unit / Medicine Identification Code
+- **SRH:** Stakeholder Requirements Hierarchy (4-Tier VOS-to-CTQ Traceability Model; see [STAKEHOLDER_REQUIREMENTS_SRH_MAPPING.md](STAKEHOLDER_REQUIREMENTS_SRH_MAPPING.md))
 
 ### 1.4 References
 - IEEE Std 830-1998: *Recommended Practice for Software Requirements Specifications*.
+- IEEE Std 29148-2018: *Systems and software engineering — Life cycle processes — Requirements engineering*.
 - ISO 9001:2015: *Quality Management Systems — Requirements*.
 - BBAT104 Course Project Guidelines, Allotment & Marking Scheme (Session 2026–27).
 - WHO Good Pharmacy Practice (GPP) Standards for Data Integrity and Patient Safety.
+- Project SRH Mapping: [docs/STAKEHOLDER_REQUIREMENTS_SRH_MAPPING.md](STAKEHOLDER_REQUIREMENTS_SRH_MAPPING.md).
 
 ### 1.5 System Overview
 The software provides a desktop GUI interface built in Python with Tkinter and SQLite3. Beyond standard inventory and billing functionalities, the system embeds five specialized Poka-Yoke data accuracy mechanisms:

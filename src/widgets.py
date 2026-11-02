@@ -4,6 +4,7 @@ Custom GUI Widgets for Q07 Data Accuracy:
 2. Validated Dropdown Lists
 3. Dynamic Auto-Complete Search
 4. Delta Confirmation Modals
+5. Supplier Deal Comparison Dialog
 BBAT104: Fundamentals of TQM (Session 2026-27)
 Student: Anmol Joshi (Roll No: 2410302004, Branch: CSE-B)
 """
@@ -11,6 +12,7 @@ Student: Anmol Joshi (Roll No: 2410302004, Branch: CSE-B)
 import re
 import tkinter as tk
 from tkinter import ttk, messagebox
+from src.models import SupplierDealRepository
 
 
 class MaskedDateEntry(ttk.Entry):
@@ -21,7 +23,6 @@ class MaskedDateEntry(ttk.Entry):
         self.bind("<KeyRelease>", self._format_date)
 
     def _format_date(self, event):
-        # Ignore backspace, delete, navigation
         if event.keysym in ("BackSpace", "Delete", "Left", "Right", "Tab"):
             return
 
@@ -129,15 +130,16 @@ class PlaceholderEntry(ttk.Entry):
 class PlaceholderMaskedPhoneEntry(ttk.Entry):
     """
     Q07 Feature 1:
-    Combines Phone Input Masking with subtle gray placeholder text.
+    Combines Phone Input Masking with subtle gray placeholder text and auto-lookup trigger.
     Ensures no dummy pre-filled values pollute the checkout flow.
     """
 
-    def __init__(self, master, placeholder="e.g. 9876543210", placeholder_color="#9ca3af", normal_color="#1f2937", **kwargs):
+    def __init__(self, master, placeholder="e.g. 9876543210", placeholder_color="#9ca3af", normal_color="#1f2937", on_phone_filled_callback=None, **kwargs):
         super().__init__(master, **kwargs)
         self.placeholder = placeholder
         self.placeholder_color = placeholder_color
         self.normal_color = normal_color
+        self.on_phone_filled_callback = on_phone_filled_callback
         self._is_placeholder = False
 
         self.bind("<FocusIn>", self._clear_placeholder)
@@ -185,6 +187,10 @@ class PlaceholderMaskedPhoneEntry(ttk.Entry):
 
         self.delete(0, tk.END)
         self.insert(0, formatted)
+
+        # Trigger customer auto-lookup when all 10 digits are entered
+        if len(digits) == 10 and self.on_phone_filled_callback:
+            self.on_phone_filled_callback(digits)
 
     def get_actual_value(self):
         if self._is_placeholder:
@@ -332,13 +338,14 @@ class AutoCompleteEntry(ttk.Entry):
         # Position below the entry
         x = self.winfo_rootx()
         y = self.winfo_rooty() + self.winfo_height()
-        w = max(self.winfo_width(), 320)
-        self.listbox_window.geometry(f"{w}x{min(150, len(items)*24 + 10)}+{x}+{y}")
+        w = max(self.winfo_width(), 360)
+        self.listbox_window.geometry(f"{w}x{min(160, len(items)*25 + 10)}+{x}+{y}")
         self.listbox_window.lift()
 
         self.listbox.delete(0, tk.END)
         for item in items:
-            display_str = f"{item['name']} ({item['generic_name']}) | Rs. {item['sale_price']:.2f} | Stock: {item['stock_qty']}"
+            gst = item.get("tax_rate", 5.0)
+            display_str = f"{item['name']} ({item['generic_name']}) | Rs. {item['sale_price']:.2f} (GST {gst}%) | Stock: {item['stock_qty']}"
             self.listbox.insert(tk.END, display_str)
 
     def _move_down(self, event):
@@ -357,7 +364,6 @@ class AutoCompleteEntry(ttk.Entry):
                 self.on_select_callback(selected_item)
 
     def _on_focus_out(self, event):
-        # Small delay to allow click on popup listbox
         self.after(200, self._check_focus_and_close)
 
     def _check_focus_and_close(self):
@@ -380,7 +386,7 @@ class ConfirmationModal(tk.Toplevel):
         super().__init__(parent)
         self.parent = parent
         self.title(title)
-        self.geometry("520x400")
+        self.geometry("540x420")
         self.resizable(False, False)
         self.grab_set()
         self.confirmed = False
@@ -393,7 +399,7 @@ class ConfirmationModal(tk.Toplevel):
         header = ttk.Label(container, text="⚠️ Action Confirmation Required", font=("Trebuchet MS", 12, "bold"), foreground="#d90429")
         header.pack(anchor=tk.W, pady=(0, 5))
 
-        desc = ttk.Label(container, text=action_description, font=("Calibri", 11), wraplength=480)
+        desc = ttk.Label(container, text=action_description, font=("Calibri", 11), wraplength=490)
         desc.pack(anchor=tk.W, pady=(0, 15))
 
         if changes_dict:
@@ -430,4 +436,162 @@ class ConfirmationModal(tk.Toplevel):
         if self.on_confirm:
             self.on_confirm()
 
-# Step 29 milestone update - feat(ui-pos): implement POS Billing tab with subtle gray watermark placeholder entry fields
+
+class SupplierComparisonDialog(tk.Toplevel):
+    """
+    TQM Procurement Advisor:
+    Evaluates which supplier offers the best trade discount and lowest wholesale cost
+    for any selected medicine, empowering smart purchasing decisions.
+    """
+
+    def __init__(self, parent, medicine, on_assigned_callback=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.medicine = medicine
+        self.on_assigned_callback = on_assigned_callback
+
+        self.title(f"Supplier Procurement Comparison — {medicine['name']}")
+        self.geometry("780x520")
+        self.resizable(False, False)
+        self.grab_set()
+
+        self._build_ui()
+
+    def _build_ui(self):
+        pad_frame = ttk.Frame(self, padding=16)
+        pad_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Header Info Banner
+        header_frame = ttk.Frame(pad_frame)
+        header_frame.pack(fill=tk.X, pady=(0, 10))
+
+        title = ttk.Label(
+            header_frame,
+            text=f"🏢 Supplier Discount & Price Comparison",
+            font=("Trebuchet MS", 13, "bold"),
+            foreground="#005f73"
+        )
+        title.pack(anchor=tk.W)
+
+        sub = ttk.Label(
+            header_frame,
+            text=f"Medicine: {self.medicine['name']} ({self.medicine['generic_name']}) | MRP: Rs. {self.medicine['sale_price']:.2f} | Current Cost: Rs. {self.medicine['purchase_price']:.2f}",
+            font=("Calibri", 10, "italic")
+        )
+        sub.pack(anchor=tk.W, pady=(2, 0))
+
+        # Fetch deals from repository
+        deals = SupplierDealRepository.get_deals_for_medicine(self.medicine["id"])
+        self.deals = deals
+
+        if deals and deals[0].get("is_best_deal"):
+            best = deals[0]
+            recommend_banner = tk.Frame(pad_frame, bg="#dcfce7", padx=10, pady=6, relief=tk.SOLID, bd=1)
+            recommend_banner.pack(fill=tk.X, pady=(5, 10))
+
+            tk.Label(
+                recommend_banner,
+                text=f"🏆 RECOMMENDED BEST DEAL: {best['supplier_name']} offers the highest discount ({best['discount_percent']}%)! "
+                     f"Cost: Rs. {best['cost_price']:.2f}/unit (Profit Margin: {best['profit_margin_percent']}%)",
+                bg="#dcfce7", fg="#15803d", font=("Calibri", 10, "bold")
+            ).pack(side=tk.LEFT)
+
+        # Table showing deals
+        table_frame = ttk.Frame(pad_frame)
+        table_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
+        cols = ("rank", "name", "discount", "cost", "mrp", "margin", "delivery", "status")
+        self.tree = ttk.Treeview(table_frame, columns=cols, show="headings", selectmode="browse", height=8)
+
+        self.tree.heading("rank", text="#")
+        self.tree.heading("name", text="Supplier Name")
+        self.tree.heading("discount", text="Trade Discount %")
+        self.tree.heading("cost", text="Net Cost (Rs.)")
+        self.tree.heading("mrp", text="Retail MRP (Rs.)")
+        self.tree.heading("margin", text="Profit Margin %")
+        self.tree.heading("delivery", text="Lead Days")
+        self.tree.heading("status", text="Deal Rating")
+
+        self.tree.column("rank", width=35, anchor=tk.CENTER)
+        self.tree.column("name", width=220, anchor=tk.W)
+        self.tree.column("discount", width=120, anchor=tk.CENTER)
+        self.tree.column("cost", width=95, anchor=tk.E)
+        self.tree.column("mrp", width=95, anchor=tk.E)
+        self.tree.column("margin", width=95, anchor=tk.CENTER)
+        self.tree.column("delivery", width=70, anchor=tk.CENTER)
+        self.tree.column("status", width=110, anchor=tk.CENTER)
+
+        self.tree.pack(fill=tk.BOTH, expand=True)
+
+        self.tree.tag_configure("best", background="#dcfce7", foreground="#15803d")
+        self.tree.tag_configure("preferred", background="#e0f2fe", foreground="#0369a1")
+
+        for idx, d in enumerate(deals, 1):
+            is_best = d.get("is_best_deal", False)
+            is_pref = bool(d.get("is_preferred", False))
+            
+            if is_best and is_pref:
+                rating = "⭐ Best & Active"
+                tag = "best"
+            elif is_best:
+                rating = "🏆 Best Discount"
+                tag = "best"
+            elif is_pref:
+                rating = "✓ Currently Assigned"
+                tag = "preferred"
+            else:
+                rating = "Standard Deal"
+                tag = "normal"
+
+            self.tree.insert("", tk.END, values=(
+                idx,
+                d["supplier_name"],
+                f"{d['discount_percent']:.1f}%",
+                f"Rs. {d['cost_price']:.2f}",
+                f"Rs. {d['mrp']:.2f}",
+                f"{d['profit_margin_percent']:.1f}%",
+                f"{d['delivery_days']} Day(s)",
+                rating
+            ), tags=(tag,))
+
+        # Action Buttons
+        btn_bar = ttk.Frame(pad_frame)
+        btn_bar.pack(fill=tk.X, pady=(5, 0))
+
+        btn_close = ttk.Button(btn_bar, text="Close", command=self.destroy)
+        btn_close.pack(side=tk.LEFT, padx=5)
+
+        btn_apply = ttk.Button(
+            btn_bar,
+            text="⭐ Set Selected Supplier as Primary & Update Cost Price",
+            style="Success.TButton",
+            command=self._apply_preferred_supplier
+        )
+        btn_apply.pack(side=tk.RIGHT, padx=5)
+
+    def _apply_preferred_supplier(self):
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showwarning("Selection Required", "Please select a supplier quote from the table to assign.")
+            return
+
+        idx = self.tree.index(selected[0])
+        deal = self.deals[idx]
+
+        confirm_msg = (
+            f"Are you sure you want to assign '{deal['supplier_name']}' as the primary supplier for '{self.medicine['name']}'?\n\n"
+            f"• Trade Discount: {deal['discount_percent']}%\n"
+            f"• New Wholesale Cost Price: Rs. {deal['cost_price']:.2f}\n"
+            f"• Estimated Profit Margin: {deal['profit_margin_percent']}%\n\n"
+            f"This will update the purchase cost in medicine catalog and record an audit log."
+        )
+
+        if messagebox.askyesno("Confirm Procurement Order", confirm_msg):
+            role = getattr(self.parent, "current_user_role", "Pharmacist")
+            SupplierDealRepository.assign_supplier_to_medicine(
+                self.medicine["id"], deal["supplier_id"], deal["cost_price"], user_role=role
+            )
+            messagebox.showinfo("Supplier Assigned", f"'{deal['supplier_name']}' is now set as the primary supplier at Rs. {deal['cost_price']:.2f}/unit.")
+            self.destroy()
+            if self.on_assigned_callback:
+                self.on_assigned_callback()

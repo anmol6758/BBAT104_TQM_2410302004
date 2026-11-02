@@ -76,3 +76,15 @@ The primary objective of **Review 2 (Base System & CRUD + 5 Quality Goal Feature
 
 ### Q3: What happens when an audit record deletion is attempted?
 **A:** The database engine executes the trigger `trg_prevent_audit_delete`, aborts the query, and raises an uncatchable SQL `RAISE(FAIL, ...)` error. This ensures complete legal immutability and compliance with Good Pharmacy Practice (GPP).
+
+---
+
+## 6. Comprehensive Review 2 Enhancements & SRH Mapping
+Based on iterative review feedback, the system incorporates 7 major quality improvements:
+1. **Role-Based Access Control (RBAC):** Gated access for Admin (full master rights), Pharmacist (dispensing & inventory without hard delete), and Cashier (POS billing read-only).
+2. **Strict Indian Mobile Validation:** Poka-Yoke enforcement of authentic 10-digit mobile numbers (prefix 6–9), automatically rejecting dummy repeating patterns (e.g. 1111111111) and invalid prefixes.
+3. **Differential Multi-Slab GST Taxes (0%, 5%, 12%, 18%) & Manual Customer Discount:** Dynamic line-item tax rate inheritance and support for % or flat-rate customer discounts with live financial calculation.
+4. **Automated Patient Registration on Sale:** Seamless automatic upsert into the customers database table during checkout, eliminating clumsy manual 'Add Patient' steps.
+5. **Supplier Discount & Procurement Optimization:** Interactive Supplier Deal Comparison Advisor ranking certified suppliers by trade discount % and profit margin.
+6. **Unified POS Billing & Barcode Workspace:** Single consolidated entry point for barcode scanning, batch numbers, trade names, and generic chemical salt search.
+7. **Stakeholder Requirements Hierarchy (SRH) Mapping:** Complete 4-tier traceability mapping linking the 6 pharmacy stakeholders (Patient, Pharmacist, Store Owner, Regulatory Inspector, Supplier, Doctor) to functional modules, Poka-Yoke controls, and CTQ targets. Detailed in [docs/STAKEHOLDER_REQUIREMENTS_SRH_MAPPING.md](STAKEHOLDER_REQUIREMENTS_SRH_MAPPING.md).
